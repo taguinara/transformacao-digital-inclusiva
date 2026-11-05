@@ -1,134 +1,117 @@
 # -*- coding: utf-8 -*-
 """
-Processamento dos metadados:
-  - leitura do Excel
-  - limpeza
-  - normalização da coluna Area
-  - extração de URLs da Garantia Literaria
-  - exportação CSV / JSON / Excel
+Normaliza a coluna Área e extrai URLs de todas as colunas que contenham 'URL'.
+Processa cada CSV gerado por ler_excel.py.
+Arquivos vazios (apenas cabeçalho ou 0 bytes) são ignorados sem erro.
 """
 
 from pathlib import Path
-import json
 import re
+import unicodedata
 import pandas as pd
 
-ARQUIVO_ENTRADA = "Controle_Vocabulario.xlsx"
-PASTA_SAIDA = Path("saida")
+PASTA = Path("saida")
 
-COLUNAS = [
-    "Area", "Subarea", "Tema_Escopo",
-    "Area_Termo", "Subarea_Termo",
-    "Garantia_Literaria", "Remissivas",
-]
-
-# ----------------------------------------------------------------------
-# MAPA DE NORMALIZAÇÃO DA COLUNA ÁREA
-# ----------------------------------------------------------------------
 MAPA_AREA = {
     "saude": "Saúde",
     "assistencia social": "Assistência Social",
-    "assistencia": "Assistência Social",
     "educacao": "Educação",
     "trabalho": "Trabalho",
     "seguranca": "Segurança",
     "direitos humanos": "Direitos Humanos",
     "pcd": "Pessoa com Deficiência",
-    "pessoa com deficiencia": "Pessoa com Deficiência",
-    "pessoas com deficiencia": "Pessoa com Deficiência",
+    "pcd/acessibilidade": "Pessoa com Deficiência",
+    "infancia e adolescencia": "Infância e Adolescência",
+    "servicos/programas": "Serviços/Programas",
+    "dados abertos": "Dados Abertos",
 }
 
-
-def normalizar_area(valor: str) -> str:
-    """Padroniza nomes da coluna Area."""
-    if not valor:
-        return ""
-    chave = valor.strip().lower()
-    return MAPA_AREA.get(chave, valor.strip())
-
-
-# ----------------------------------------------------------------------
-# EXTRAÇÃO DE URLs
-# ----------------------------------------------------------------------
 PADRAO_URL = re.compile(r"https?://[^\s\)\]\>,;\"']+")
 
+ABAS = (
+    "catalogo_recursos",
+    "vocabulario_controlado",
+    "novos_termos",
+    "relacoes",
+    "fontes",
+    "avaliacoes",
+)
 
-def extrair_urls(texto: str) -> list[str]:
-    """Retorna lista de URLs encontradas em um texto."""
-    if not texto:
+
+def normalizar(s):
+    if not s:
+        return ""
+    t = unicodedata.normalize("NFKD", str(s).lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def normalizar_area(v):
+    k = normalizar(v)
+    return MAPA_AREA.get(k, str(v).strip())
+
+
+def extrair_urls(t):
+    if not t:
         return []
-    return PADRAO_URL.findall(texto)
+    return PADRAO_URL.findall(str(t))
 
 
-# ----------------------------------------------------------------------
-# LEITURA E LIMPEZA
-# ----------------------------------------------------------------------
-def ler_excel(caminho=ARQUIVO_ENTRADA) -> pd.DataFrame:
-    caminho = Path(caminho)
-    if not caminho.exists():
-        raise FileNotFoundError(f"'{caminho}' não encontrado.")
+def processar(df):
+    df = df.fillna("").astype(str)
+    df = df.apply(lambda c: c.str.strip())
 
-    df = pd.read_excel(caminho, dtype=str)
-    df.columns = (df.columns.str.strip()
-                            .str.replace(" ", "_")
-                            .str.replace("/", "_"))
-    print(f"✔ Planilha lida: {len(df)} linhas | colunas: {list(df.columns)}")
+    for col in ("Área", "Area"):
+        if col in df.columns:
+            df[col] = df[col].apply(normalizar_area)
+
+    cols_url = [c for c in df.columns if "URL" in c.upper()]
+    if cols_url:
+        df["_urls"] = df[cols_url].apply(
+            lambda r: list(dict.fromkeys(
+                u for v in r for u in extrair_urls(v)
+            )),
+            axis=1,
+        )
+        df["Qtd_URLs"] = df["_urls"].apply(len)
     return df
 
 
-def limpar(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.dropna(how="all").fillna("")
-    for col in df.columns:
-        df[col] = df[col].astype(str).str.strip()
+def processar_aba(base):
+    arq = PASTA / f"{base}.csv"
 
-    # Normaliza a coluna Area
-    if "Area" in df.columns:
-        df["Area"] = df["Area"].apply(normalizar_area)
+    if not arq.exists():
+        print(f"  ⚠ {base}: CSV ausente — ignorado")
+        return
 
-    # Extrai URLs da garantia literária
-    if "Garantia_Literaria" in df.columns:
-        df["URLs"] = df["Garantia_Literaria"].apply(
-            lambda t: "; ".join(extrair_urls(t))
-        )
-        df["Qtd_URLs"] = df["URLs"].apply(
-            lambda s: 0 if not s else len(s.split(";"))
-        )
+    if arq.stat().st_size == 0:
+        print(f"  ⚠ {base}: arquivo vazio (0 bytes) — ignorado")
+        return
 
-    antes = len(df)
-    df = df.drop_duplicates()
-    if antes != len(df):
-        print(f"  ⚠ {antes - len(df)} duplicada(s) removida(s)")
+    try:
+        df = pd.read_csv(arq, sep=";", dtype=str, encoding="utf-8-sig")
+    except pd.errors.EmptyDataError:
+        print(f"  ⚠ {base}: sem dados (apenas cabeçalho) — ignorado")
+        return
 
-    print(f"✔ Limpeza concluída: {len(df)} linhas")
-    return df
+    if df.empty:
+        print(f"  ⚠ {base}: 0 linhas — ignorado")
+        return
 
+    df = processar(df)
+    df_out = df.drop(columns=["_urls"], errors="ignore")
 
-def exportar(df: pd.DataFrame, pasta=PASTA_SAIDA) -> None:
-    pasta = Path(pasta)
-    pasta.mkdir(exist_ok=True)
+    df_out.to_csv(arq, index=False, sep=";", encoding="utf-8-sig")
+    df_out.to_json(PASTA / f"{base}.json",
+                   orient="records", force_ascii=False, indent=2)
 
-    df.to_csv(pasta / "metadados_limpos.csv",
-              index=False, encoding="utf-8-sig", sep=";")
-    df.to_excel(pasta / "metadados_limpos.xlsx",
-                index=False, engine="openpyxl")
-    with open(pasta / "metadados_limpos.json", "w", encoding="utf-8") as f:
-        json.dump(df.to_dict(orient="records"), f,
-                  ensure_ascii=False, indent=2)
-
-    print(f"✔ Arquivos salvos em: {pasta.resolve()}")
+    n_urls = int(df["Qtd_URLs"].sum()) if "Qtd_URLs" in df.columns else 0
+    print(f"✔ {base}: {len(df)} linhas, {n_urls} URLs")
 
 
-def resumo(df: pd.DataFrame) -> None:
-    print("\n--- Resumo ---")
-    if "Area" in df.columns:
-        print("\nLinhas por Área (normalizada):")
-        print(df["Area"].value_counts().to_string())
-    if "Qtd_URLs" in df.columns:
-        print(f"\nTotal de URLs extraídas: {df['Qtd_URLs'].sum()}")
-        print(f"Linhas com pelo menos 1 URL: {(df['Qtd_URLs'] > 0).sum()}")
+def main():
+    for base in ABAS:
+        processar_aba(base)
 
 
 if __name__ == "__main__":
-    df = limpar(ler_excel())
-    exportar(df)
-    resumo(df)
+    main()

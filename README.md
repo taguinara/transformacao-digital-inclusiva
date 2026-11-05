@@ -1,89 +1,104 @@
-# 📚 Curadoria de Metadados — Transformação Digital Inclusiva
+# 📚 Curadoria Digital dos Metadados — Transformação Digital Inclusiva
 
-Sistema de curadoria, normalização e publicação de metadados para o projeto **Transformação Digital Inclusiva: cidadania, acessibilidade e ensino**.
+![Python](https://img.shields.io/badge/python-3.10%2B-0072B2?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/dashboard-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Integridade](https://img.shields.io/badge/integridade-SHA--256-56B4E9)
 
-Pipeline simples para transformar um vocabulário controlado em Word em dados estruturados (Excel, CSV, JSON, Dublin Core) e visualizá-los num dashboard interativo.
+Pipeline de **curadoria, normalização e publicação de metadados** do projeto
+**Transformação Digital Inclusiva: cidadania, acessibilidade e ensino**
+(IBICT · PD&I). Lê a planilha de curadoria, normaliza os campos, gera CSV, JSON,
+Excel e Dublin Core XML com PREMIS, preserva a integridade com SHA-256 e
+snapshots versionados, e oferece um **dashboard acessível**.
 
----
+🔗 **Dashboard online:** `https://transformacao-digital-inclusiva.streamlit.app`
 
-## 📂 Estrutura
+## 🔄 Fluxo
 
-```text
-transformacao-digital-inclusiva/
-├── ler_docx.py                # Word → Excel
-├── metadados.py               # Excel → CSV/JSON/Excel (normalizado)
-├── dublin_core.py             # CSV → Dublin Core XML
-├── app.py                     # Dashboard Streamlit
-├── requirements.txt
-├── Controle_Vocabulario.docx  # entrada (você edita aqui)
-└── saida/                     # criada automaticamente
+```mermaid
+flowchart LR
+    A[("curadoria_digital_...xlsx")] -->|ler_excel.py| B["saida/*.csv"]
+    B -->|metadados.py| C["CSV limpos + JSON"]
+    C -->|dublin_core.py| D["Dublin Core + PREMIS"]
+    C -->|preservacao.py| E["SHA-256 + historico/"]
+    C -->|relatorio.py| F["RELATORIO.md"]
+    C -->|app.py| G["📊 Dashboard"]
 ```
 
----
-
-## ⚙️ Instalação
+## ⚡ Início rápido
 
 ```bash
+git clone <url-do-repositorio> && cd transformacao-digital-inclusiva
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+python ler_excel.py      # Excel → CSVs (6 abas)
+python metadados.py      # normalização + URLs
+python dublin_core.py    # Dublin Core XML + PREMIS
+python preservacao.py    # checksums + snapshot
+python relatorio.py      # saida/RELATORIO.md
+streamlit run app.py     # dashboard em localhost:8501
 ```
 
----
+Requer Python 3.10+. Se o `Makefile` tiver alvos equivalentes, use `make all`.
 
-## 🚀 Como usar
+## 🧩 Módulos e abas
 
-Rode os scripts na ordem:
+| Módulo | Função |
+|---|---|
+| `ler_excel.py` | Extrai as abas do `.xlsx` para CSV (`;`, UTF-8 BOM) |
+| `metadados.py` | Normaliza campos, valida URLs, gera CSV/JSON limpos |
+| `dublin_core.py` | Gera Dublin Core XML com eventos PREMIS |
+| `preservacao.py` | SHA-256, manifesto (JSON/CSV) e snapshots em `saida/historico/` |
+| `relatorio.py` | Relatório de qualidade e cobertura |
+| `app.py` | Dashboard Streamlit |
 
-```bash
-python ler_docx.py       # 1. Word → Excel
-python metadados.py      # 2. Normaliza Área + extrai URLs
-python dublin_core.py    # 3. Gera dublin_core.xml
-streamlit run app.py     # 4. Abre o dashboard
-```
+**Abas de entrada:** Recursos · Vocabulário controlado · Novos termos ·
+Relações · Fontes · Avaliações (→ `catalogo_recursos.csv`,
+`vocabulario_controlado.csv`, `novos_termos.csv`, `relacoes.csv`, `fontes.csv`,
+`avaliacoes.csv`). Valores múltiplos na mesma célula: separe com `;` ou `|`.
 
-O dashboard fica disponível em <http://localhost:8501>.
+## 📊 Dashboard e acessibilidade
 
----
+- Visão geral, busca sem acentos, filtros, gráficos com tabela alternativa,
+  links clicáveis, ficha do registro e download em CSV.
+- Aceita upload de `.xlsx` quando não há CSVs em `saida/`.
+- Idioma `pt-BR`, texto ajustável (90–150%), **alto contraste**, redução de
+  animações, foco visível para teclado e paleta Okabe-Ito (segura para
+  daltonismo, sem depender só de cor).
 
-## 🧩 O que cada script faz
+## ☁️ Publicação no Streamlit Cloud
 
-| Script | Entrada | Saída | O que faz |
-|---|---|---|---|
-| `ler_docx.py` | `.docx` | `.xlsx` | Lê a tabela do Word, resolve células mescladas e propaga Área/Subárea |
-| `metadados.py` | `.xlsx` | `.csv`, `.json`, `.xlsx` | Normaliza a coluna Área e extrai URLs da garantia literária |
-| `dublin_core.py` | `.csv` | `.xml` | Converte cada registro em Dublin Core |
-| `app.py` | `.csv` | — | Dashboard com filtros, gráficos e download |
+1. Gere os CSVs e faça commit de `app.py`, `requirements.txt`,
+   `.streamlit/config.toml` e `saida/` no GitHub (use repositório privado se
+   os dados forem sensíveis).
+2. Em [share.streamlit.io](https://share.streamlit.io) → **Create app** →
+   escolha repositório, branch e `app.py` → **Deploy**.
+3. Para atualizar, gere os CSVs de novo e faça commit.
 
----
+## 🛡️ Preservação e padrões
 
-## 📋 Formato do Excel
+- **SHA-256** de todos os arquivos: `saida/manifest_sha256.json` e `.csv`
+  (`sha256sum arquivo` para conferir).
+- **Snapshots** em `saida/historico/<timestamp>/`.
+- **Dublin Core + PREMIS** (`saida/dublin_core_*.xml`) para interoperabilidade
+  com repositórios e OAI-PMH.
 
-São **7 colunas obrigatórias**:
+## 🩺 Problemas comuns
 
-```text
-Area | Subarea | Tema_Escopo | Area_Termo | Subarea_Termo | Garantia_Literaria | Remissivas
-```
+| Problema | Solução |
+|---|---|
+| "Rode primeiro: python ler_excel.py" | Execute `ler_excel.py` e `metadados.py` |
+| Acentos quebrados no Excel | Importe como UTF-8, separador `;` |
+| `ModuleNotFoundError` | `pip install -r requirements.txt` |
+| Dashboard vazio na nuvem | Inclua `saida/` no commit ou envie o `.xlsx` na barra lateral |
 
-> Use `_` em vez de `/` nos nomes das colunas.
+## 🗺️ Próximos passos
 
----
+SKOS/RDF · OAI-PMH · testes e CI (GitHub Actions) · validação do XML ·
+grafo de relações · versão em inglês.
 
-## 📤 Saídas geradas
+## 🤝 Contribuição, citação e licença
 
-Todos os arquivos são criados na pasta `saida/`:
-
-```text
-saida/metadados_limpos.xlsx
-saida/metadados_limpos.csv
-saida/metadados_limpos.json
-saida/dublin_core.xml
-```
-
----
-
-## 📈 Dashboard
-
-- **Métricas:** registros, áreas, subáreas e URLs
-- **Filtros:** por Área, Subárea e busca livre
-- **Gráficos:** barras por categoria
-- **Tabela interativa** com detalhe de cada registro
-- **Download** em CSV ou JSON
+Contribua via *fork* → branch → *Pull Request*, ou abra uma *issue*.
+Citação: IBICT. *Curadoria de Metadados — Transformação Digital Inclusiva*.
+Brasília, 2026. 
