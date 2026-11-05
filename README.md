@@ -6,99 +6,86 @@
 
 Pipeline de **curadoria, normalização e publicação de metadados** do projeto
 **Transformação Digital Inclusiva: cidadania, acessibilidade e ensino**
-(IBICT · PD&I). Lê a planilha de curadoria, normaliza os campos, gera CSV, JSON,
-Excel e Dublin Core XML com PREMIS, preserva a integridade com SHA-256 e
-snapshots versionados, e oferece um **dashboard acessível**.
+(IBICT - PD&I).
+ 
+Lê a planilha de curadoria, normaliza os campos, gera CSV, JSON e Dublin Core
+XML com PREMIS, garante a integridade com SHA-256 e snapshots versionados, e
+oferece um dashboard acessível em Streamlit.
 
 🔗 **Dashboard online:** `https://transformacao-digital-inclusiva.streamlit.app`
 
-## 🔄 Fluxo
-
-```mermaid
-flowchart LR
-    A[("curadoria_digital_...xlsx")] -->|ler_excel.py| B["saida/*.csv"]
-    B -->|metadados.py| C["CSV limpos + JSON"]
-    C -->|dublin_core.py| D["Dublin Core + PREMIS"]
-    C -->|preservacao.py| E["SHA-256 + historico/"]
-    C -->|relatorio.py| F["RELATORIO.md"]
-    C -->|app.py| G["📊 Dashboard"]
+## Fluxo
+ 
+```text
+planilha .xlsx
+  -> python ler_excel.py      CSVs por aba em saida/
+  -> python metadados.py      metadados_limpos.csv e JSON
+  -> python dublin_core.py    Dublin Core XML + PREMIS
+  -> python preservacao.py    SHA-256 + snapshots em saida/historico/
+  -> python relatorio.py      saida/RELATORIO.md
+  -> streamlit run app.py     dashboard
 ```
-
-## ⚡ Início rápido
-
+ 
+## Início rápido
+ 
 ```bash
-git clone <url-do-repositorio> && cd transformacao-digital-inclusiva
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+git clone URL-DO-REPOSITORIO
+cd transformacao-digital-inclusiva
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-python ler_excel.py      # Excel → CSVs (6 abas)
-python metadados.py      # normalização + URLs
-python dublin_core.py    # Dublin Core XML + PREMIS
-python preservacao.py    # checksums + snapshot
-python relatorio.py      # saida/RELATORIO.md
-streamlit run app.py     # dashboard em localhost:8501
+ 
+python ler_excel.py
+python metadados.py
+streamlit run app.py
 ```
+ 
+Requer Python 3.10 ou superior.
+ 
+## Conteúdo da planilha
+ 
+| Aba | Registros |
+|-----|-----------|
+| Catálogo de recursos | 13 |
+| Vocabulário controlado | 113 |
+| Novos termos propostos | 25 |
+| Relações recurso-termo | 27 |
+| Fontes oficiais | 14 |
+| Avaliações críticas | 0 |
+ 
+## Dashboard e acessibilidade
+ 
+- Painel com quantitativo por aba, áreas e subáreas, cartões de registros,
+  tabela e exportação em CSV e JSON.
+- Busca sem acentos e filtros por área e subárea.
+- Texto ajustável (90% a 150%), alto contraste, redução de animações e foco
+  visível para teclado.
+- Paleta segura para daltonismo e tabela alternativa para cada gráfico.
+- Se não houver CSV em `saida/`, aceita upload na barra lateral.
 
-Requer Python 3.10+. Se o `Makefile` tiver alvos equivalentes, use `make all`.
+## Publicação no Streamlit Cloud
+ 
+1. Faça commit de `app.py`, `requirements.txt`, `.streamlit/config.toml` e da
+   pasta `saida/` no GitHub.
+2. Em https://share.streamlit.io, clique em **Create app**, escolha o
+   repositório, a branch e `app.py`, e clique em **Deploy**.
+3. Para atualizar os dados, gere os CSVs de novo e faça commit.
 
-## 🧩 Módulos e abas
+## Preservação
+ 
+- SHA-256 de todos os arquivos em `saida/manifest_sha256.json` e `.csv`.
+- Snapshots em `saida/historico/<timestamp>/`.
+- Dublin Core + PREMIS em `saida/dublin_core_*.xml`.
 
-| Módulo | Função |
-|---|---|
-| `ler_excel.py` | Extrai as abas do `.xlsx` para CSV (`;`, UTF-8 BOM) |
-| `metadados.py` | Normaliza campos, valida URLs, gera CSV/JSON limpos |
-| `dublin_core.py` | Gera Dublin Core XML com eventos PREMIS |
-| `preservacao.py` | SHA-256, manifesto (JSON/CSV) e snapshots em `saida/historico/` |
-| `relatorio.py` | Relatório de qualidade e cobertura |
-| `app.py` | Dashboard Streamlit |
-
-**Abas de entrada:** Recursos · Vocabulário controlado · Novos termos ·
-Relações · Fontes · Avaliações (→ `catalogo_recursos.csv`,
-`vocabulario_controlado.csv`, `novos_termos.csv`, `relacoes.csv`, `fontes.csv`,
-`avaliacoes.csv`). Valores múltiplos na mesma célula: separe com `;` ou `|`.
-
-## 📊 Dashboard e acessibilidade
-
-- Visão geral, busca sem acentos, filtros, gráficos com tabela alternativa,
-  links clicáveis, ficha do registro e download em CSV.
-- Aceita upload de `.xlsx` quando não há CSVs em `saida/`.
-- Idioma `pt-BR`, texto ajustável (90–150%), **alto contraste**, redução de
-  animações, foco visível para teclado e paleta Okabe-Ito (segura para
-  daltonismo, sem depender só de cor).
-
-## ☁️ Publicação no Streamlit Cloud
-
-1. Gere os CSVs e faça commit de `app.py`, `requirements.txt`,
-   `.streamlit/config.toml` e `saida/` no GitHub (use repositório privado se
-   os dados forem sensíveis).
-2. Em [share.streamlit.io](https://share.streamlit.io) → **Create app** →
-   escolha repositório, branch e `app.py` → **Deploy**.
-3. Para atualizar, gere os CSVs de novo e faça commit.
-
-## 🛡️ Preservação e padrões
-
-- **SHA-256** de todos os arquivos: `saida/manifest_sha256.json` e `.csv`
-  (`sha256sum arquivo` para conferir).
-- **Snapshots** em `saida/historico/<timestamp>/`.
-- **Dublin Core + PREMIS** (`saida/dublin_core_*.xml`) para interoperabilidade
-  com repositórios e OAI-PMH.
-
-## 🩺 Problemas comuns
-
+## Problemas comuns
+ 
 | Problema | Solução |
-|---|---|
-| "Rode primeiro: python ler_excel.py" | Execute `ler_excel.py` e `metadados.py` |
-| Acentos quebrados no Excel | Importe como UTF-8, separador `;` |
+|----------|---------|
+| Arquivo não encontrado | Rode `ler_excel.py` e `metadados.py` |
+| Acentos quebrados | Importe como UTF-8, separador `;` |
 | `ModuleNotFoundError` | `pip install -r requirements.txt` |
-| Dashboard vazio na nuvem | Inclua `saida/` no commit ou envie o `.xlsx` na barra lateral |
-
-## 🗺️ Próximos passos
-
-SKOS/RDF · OAI-PMH · testes e CI (GitHub Actions) · validação do XML ·
-grafo de relações · versão em inglês.
-
-## 🤝 Contribuição, citação e licença
-
-Contribua via *fork* → branch → *Pull Request*, ou abra uma *issue*.
-Citação: IBICT. *Curadoria de Metadados — Transformação Digital Inclusiva*.
-Brasília, 2026. 
+| Dashboard vazio na nuvem | Inclua `saida/` no commit |
+ 
+## Licença e citação
+ 
+IBICT. *Curadoria de Metadados - Transformação Digital Inclusiva*. Brasília, 2026.
