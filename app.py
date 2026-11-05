@@ -2,10 +2,11 @@
 """
 Dashboard de curadoria - Transformação Digital Inclusiva (IBICT · PD&I)
 Execute com:  streamlit run app.py
-Dados: saida/metadados_limpos.csv  (ou upload de CSV na barra lateral)
+Dados: arquivo .xlsx na raiz do repositório (ou upload na barra lateral)
 """
 
 import html
+import io
 import re
 import unicodedata
 from pathlib import Path
@@ -16,19 +17,29 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-CSV = Path(__file__).parent / "saida" / "metadados_limpos.csv"
+AQUI = Path(__file__).parent
+CSV_LIMPO = AQUI / "saida" / "metadados_limpos.csv"
+XLSX_PADRAO = "curadoria_digital_vocabulario_controlado_out_2026.xlsx"
 URL_RE = re.compile(r"https?://[^\s;,|<>\"')\]]+")
-BASE = ["Area", "Subarea", "Tema_Escopo", "Subarea_Termo", "URLs", "Qtd_URLs"]
+BASE = ["Area", "Subarea", "Tema_Escopo", "Subarea_Termo", "URLs"]
 
-# Abas da planilha: (rótulo, arquivo em saida/, quantitativo de referência)
-# Se o CSV existir em saida/, a contagem é feita ao vivo; senão usa a referência.
+# nomes aceitos (sem acento/espaço/símbolo) para cada coluna-chave
+ALIAS = {
+    "Area": ["area", "areadoconhecimento", "grandearea"],
+    "Subarea": ["subarea"],
+    "Tema_Escopo": ["temaescopo", "tema", "escopo", "temaescopogarantia"],
+    "Subarea_Termo": ["subareatermo", "termo", "termoautorizado",
+                      "termopreferencial"],
+    "URLs": ["urls", "url", "link", "links", "fonte", "fontes"],
+}
+ROTULO = {"Area": "Área", "Subarea": "Subárea", "Tema_Escopo": "Tema",
+          "Subarea_Termo": "Termo", "URLs": "URLs"}
+
+# Referência (usada só se a fonte tiver uma única aba, ex.: CSV)
 ABAS_QTD = [
-    ("Catálogo de recursos",   "catalogo_recursos.csv",       13),
-    ("Vocabulário controlado", "vocabulario_controlado.csv", 113),
-    ("Novos termos propostos", "novos_termos.csv",            25),
-    ("Relações recurso-termo", "relacoes.csv",                27),
-    ("Fontes oficiais",        "fontes.csv",                  14),
-    ("Avaliações críticas",    "avaliacoes.csv",               0),
+    ("Catálogo de recursos", 13), ("Vocabulário controlado", 113),
+    ("Novos termos propostos", 25), ("Relações recurso-termo", 27),
+    ("Fontes oficiais", 14), ("Avaliações críticas", 0),
 ]
 
 # Paleta Okabe-Ito (segura para daltonismo)
@@ -47,37 +58,87 @@ def norm(s):
     return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
+def chave(s):
+    return re.sub(r"[^a-z0-9]", "", norm(s))
+
+
 def esc(x):
     return html.escape(str(x), quote=True)
 
 
-@st.cache_data(show_spinner="Carregando dados…")
-def ler(origem):
-    df = pd.read_csv(origem, sep=";", dtype=str,
-                     encoding="utf-8-sig").fillna("")
+def achar_xlsx():
+    pref = AQUI / XLSX_PADRAO
+    if pref.exists():
+        return pref
+    cand = sorted(AQUI.glob("*.xlsx")) + sorted((AQUI / "saida").glob("*.xlsx"))
+    cand = [p for p in cand if not p.name.startswith("~$")]
+    return cand[0] if cand else None
+
+
+def com_cabecalho(d):
+    """Detecta a linha de cabeçalho (ignora títulos/linhas em branco)."""
+    d = d.fillna("").astype(str).apply(lambda s: s.str.strip())
+    d = d.loc[(d != "").any(axis=1)].reset_index(drop=True)
+    if d.empty:
+        return pd.DataFrame()
+    cont = (d.head(10) != "").sum(axis=1)
+    h = next((i for i in range(len(cont))
+              if cont.iloc[i] >= max(2, 0.6 * cont.max())), 0)
+    nomes, vistos = [], {}
+    for j, v in enumerate(d.iloc[h]):
+        v = v or f"Coluna {j + 1}"
+        n = vistos.get(v, 0)
+        vistos[v] = n + 1
+        nomes.append(v if n == 0 else f"{v} ({n + 1})")
+    corpo = d.iloc[h + 1:].reset_index(drop=True)
+    corpo.columns = nomes
+    manter = [c for c in nomes
+              if not (c.startswith("Coluna ") and (corpo[c] == "").all())]
+    return corpo[manter]
+
+
+@st.cache_data(show_spinner="Lendo o Excel…")
+def ler_xlsx(conteudo: bytes):
+    brutas = pd.read_excel(io.BytesIO(conteudo), sheet_name=None,
+                           header=None, dtype=str)
+    return {nome: com_cabecalho(d) for nome, d in brutas.items()}
+
+
+@st.cache_data(show_spinner="Lendo o CSV…")
+def ler_csv(conteudo: bytes):
+    d = pd.read_csv(io.BytesIO(conteudo), sep=";", dtype=str,
+                    encoding="utf-8-sig").fillna("")
+    return {"metadados_limpos": d}
+
+
+def preparar(d):
+    """Mapeia colunas para os nomes-chave; devolve (df, mapa canônico→original)."""
+    d = d.copy()
+    mapa = {}
+    for canon, alias in ALIAS.items():
+        for c in d.columns:
+            if chave(c) in alias and c not in mapa.values():
+                mapa[canon] = c
+                break
+    # alternativa: usa as primeiras colunas livres como Área/Subárea/Tema
+    livres = [c for c in d.columns if c not in mapa.values()]
+    for canon in ["Area", "Subarea", "Tema_Escopo"]:
+        if canon not in mapa and livres:
+            mapa[canon] = livres.pop(0)
+    d = d.rename(columns={v: k for k, v in mapa.items()})
     for c in BASE:
-        if c not in df.columns:
-            df[c] = ""
-    df["Qtd_URLs"] = pd.to_numeric(df["Qtd_URLs"], errors="coerce") \
-        .fillna(0).astype(int)
-    return df
+        if c not in d.columns:
+            d[c] = ""
+    if "URLs" not in mapa:  # extrai URLs de qualquer coluna
+        d["URLs"] = d.apply(lambda r: " ; ".join(dict.fromkeys(
+            u for v in r.astype(str) for u in URL_RE.findall(v))), axis=1)
+    d["Qtd_URLs"] = d["URLs"].map(lambda v: len(URL_RE.findall(str(v))))
+    return d, mapa
 
 
-@st.cache_data(show_spinner=False)
-def quantitativo_abas():
-    linhas = []
-    for rotulo, arq, ref in ABAS_QTD:
-        p = CSV.parent / arq
-        if p.exists():
-            try:
-                n = len(pd.read_csv(p, sep=";", dtype=str,
-                                    encoding="utf-8-sig"))
-            except Exception:
-                n = ref
-        else:
-            n = ref
-        linhas.append({"Aba": rotulo, "Registros": int(n)})
-    return pd.DataFrame(linhas)
+def rot(mapa, canon):
+    """Rótulo exibido: nome original da coluna na planilha."""
+    return mapa.get(canon, ROTULO.get(canon, canon))
 
 
 # ------------------------------------------------------------ acessibilidade
@@ -88,16 +149,50 @@ with st.sidebar.expander("♿ Acessibilidade", expanded=True):
     alto = st.checkbox("Alto contraste")
     sem_anim = st.checkbox("Reduzir animações")
 
-if CSV.exists():
-    df = ler(CSV)
+# ------------------------------------------------------------------ dados
+dados, fonte = None, ""
+xlsx = achar_xlsx()
+if xlsx is not None:
+    dados, fonte = ler_xlsx(xlsx.read_bytes()), xlsx.name
+elif CSV_LIMPO.exists():
+    dados, fonte = ler_csv(CSV_LIMPO.read_bytes()), CSV_LIMPO.name
 else:
-    st.sidebar.info(f"`{CSV.name}` não encontrado. Envie o CSV abaixo.")
-    up = st.sidebar.file_uploader("metadados_limpos.csv", type=["csv"])
+    st.sidebar.info("Nenhum arquivo de dados encontrado no repositório. "
+                    "Envie o Excel (.xlsx) ou o CSV abaixo.")
+    up = st.sidebar.file_uploader("Planilha de curadoria",
+                                  type=["xlsx", "csv"])
     if up is None:
         st.title("📚 Curadoria de Metadados")
-        st.info("Rode `python metadados.py` ou envie o CSV na barra lateral.")
+        st.info(
+            "**Os dados da curadoria ainda não foram carregados.**\n\n"
+            "Envie a planilha `.xlsx` (ou o CSV) na barra lateral.\n\n"
+            f"_Administração: para abrir já com os dados, inclua "
+            f"`{XLSX_PADRAO}` na raiz do repositório do GitHub._")
         st.stop()
-    df = ler(up)
+    dados = (ler_xlsx(up.getvalue()) if up.name.lower().endswith("xlsx")
+             else ler_csv(up.getvalue()))
+    fonte = up.name
+
+abas_com_dados = [n for n, d in dados.items() if len(d) > 0]
+if not abas_com_dados:
+    st.error("A planilha não possui abas com registros.")
+    st.stop()
+
+
+def pontuacao(nome):
+    _, m = preparar(dados[nome])
+    achou = sum(1 for k in ["Area", "Subarea", "Tema_Escopo"]
+                if k in m and chave(m[k]) in ALIAS[k])
+    return (achou, "vocabulario" in norm(nome), len(dados[nome]))
+
+
+padrao = max(abas_com_dados, key=pontuacao)
+st.sidebar.caption(f"Fonte: {fonte}")
+aba_sel = st.sidebar.selectbox(
+    "Aba da planilha para explorar", abas_com_dados,
+    index=abas_com_dados.index(padrao))
+df, mapa = preparar(dados[aba_sel])
+R_AREA, R_SUB = rot(mapa, "Area"), rot(mapa, "Subarea")
 
 # ------------------------------------------------------------------- tema
 if alto:
@@ -175,11 +270,11 @@ st.markdown(CSS, unsafe_allow_html=True)
 # ------------------------------------------------------------------ filtros
 st.sidebar.header("🔎 Filtros")
 areas = sorted(a for a in df["Area"].unique() if a)
-area_sel = st.sidebar.multiselect("Área", areas, default=areas)
+area_sel = st.sidebar.multiselect(R_AREA, areas, default=areas)
 subs = sorted(s for s in df.loc[df["Area"].isin(area_sel), "Subarea"]
               .unique() if s)
-sub_sel = st.sidebar.multiselect("Subárea", subs, default=subs)
-busca = st.sidebar.text_input("Buscar texto (tema, termo, garantia)")
+sub_sel = st.sidebar.multiselect(R_SUB, subs, default=subs)
+busca = st.sidebar.text_input("Buscar texto")
 
 f = df[df["Area"].isin(area_sel) & df["Subarea"].isin(sub_sel)].copy()
 if busca:
@@ -199,8 +294,8 @@ st.markdown(f"""
 </header>
 <section class="kpis" aria-label="Indicadores gerais">
   <div class="kpi"><div class="n">{len(f)}</div><div class="l">Registros</div></div>
-  <div class="kpi"><div class="n">{f["Area"].replace("", pd.NA).nunique()}</div><div class="l">Áreas</div></div>
-  <div class="kpi"><div class="n">{f["Subarea"].replace("", pd.NA).nunique()}</div><div class="l">Subáreas</div></div>
+  <div class="kpi"><div class="n">{f["Area"].replace("", pd.NA).nunique()}</div><div class="l">{esc(R_AREA)} (distintos)</div></div>
+  <div class="kpi"><div class="n">{f["Subarea"].replace("", pd.NA).nunique()}</div><div class="l">{esc(R_SUB)} (distintos)</div></div>
   <div class="kpi"><div class="n">{int(f["Qtd_URLs"].sum())}</div><div class="l">URLs de fonte</div></div>
 </section>
 """, unsafe_allow_html=True)
@@ -215,10 +310,15 @@ aba1, aba2, aba3, aba4 = st.tabs(
 # ------------------------------------------------------------------- painel
 with aba1:
     # ---- quantitativo por aba da planilha (total, não afetado pelos filtros)
-    qa = quantitativo_abas()
+    if len(dados) > 1:
+        qa = pd.DataFrame({"Aba": list(dados.keys()),
+                           "Registros": [len(d) for d in dados.values()]})
+    else:
+        qa = pd.DataFrame(ABAS_QTD, columns=["Aba", "Registros"])
     st.markdown('<div class="sec">Quantitativo por aba da planilha</div>',
                 unsafe_allow_html=True)
-    st.caption("Totais da planilha de curadoria; não mudam com os filtros.")
+    st.caption("Totais de todas as abas da planilha; não mudam com "
+               "os filtros." + ("" if len(dados) > 1 else " (valores de referência)"))
     cards = ""
     for i, r in qa.iterrows():
         n = r["Registros"]
@@ -321,17 +421,17 @@ with aba2:
     with st.expander("🔍 Detalhe completo de um registro"):
         idx = st.selectbox(
             "Selecione um tema", f.index,
-            format_func=lambda i: f"{f.at[i, 'Area']} → {f.at[i, 'Tema_Escopo']}")
+            format_func=lambda i: f"{f.at[i, 'Area']} → "
+                                  f"{f.at[i, 'Tema_Escopo'] or f.at[i, 'Subarea']}")
         for col in f.columns:
             v = str(f.loc[idx, col]).strip()
-            if v and v != "0":
-                st.markdown(f"**{col}:** {v}")
+            if v and col != "Qtd_URLs":
+                st.markdown(f"**{mapa.get(col, col)}:** {v}")
 
 # ------------------------------------------------------------------- tabela
 with aba3:
-    mostrar = [c for c in ["Area", "Subarea", "Tema_Escopo",
-                           "Subarea_Termo", "URLs"] if c in f.columns]
-    vis = f[mostrar]
+    volta = {k: v for k, v in mapa.items()}
+    vis = f.drop(columns=["Qtd_URLs"]).rename(columns=volta)
     if alto:
         vis = vis.style.set_properties(
             **{"background-color": "#000000", "color": "#FFFFFF"})
@@ -339,7 +439,8 @@ with aba3:
 
 # ----------------------------------------------------------------- exportar
 with aba4:
-    st.caption(f"Exporta os {len(f)} registros filtrados.")
+    st.caption(f"Exporta os {len(f)} registros filtrados da aba "
+               f"\"{aba_sel}\".")
     d1, d2 = st.columns(2)
     d1.download_button("Baixar CSV filtrado",
                        f.to_csv(index=False, sep=";").encode("utf-8-sig"),
