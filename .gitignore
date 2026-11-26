@@ -1,26 +1,70 @@
-# Python
+# ============ Python ============
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
 dist/
 
-# Ambientes virtuais
+# ============ Ambientes virtuais ============
 .venv/
 venv/
 env/
 
-# Saídas do pipeline (regeneráveis)
-saida/
-
-# Streamlit
+# ============ Streamlit ============
 .streamlit/secrets.toml
+streamlit/secrets.toml
 
-# Sistema operacional
+# ============ Credenciais e ambiente ============
+.env
+.env.*
+credentials.json
+token.json
+service-account*.json
+*.pem
+*.key
+
+# ============ Saídas do pipeline (regeneráveis) ============
+saida/
+output/
+outputs/
+reports/
+
+# ============ Dados volumosos (exceto amostras) ============
+data/raw/
+data/processed/
+*.parquet
+*.pkl
+*.h5
+*.hdf5
+*.feather
+*.npy
+*.npz
+*.sqlite
+*.db
+
+# ============ Jupyter ============
+.ipynb_checkpoints/
+
+# ============ Testes e qualidade ============
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+
+# ============ Logs e temporários ============
+*.log
+*.tmp
+*.bak
+pip-log.txt
+
+# ============ Sistema operacional ============
 .DS_Store
 Thumbs.db
 
-# IDEs
+# ============ IDEs ============
 .vscode/
 .idea/
 *.swp
