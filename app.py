@@ -352,8 +352,32 @@ html{font-size:%%FS%%%;}
 [data-baseweb="input"],[data-baseweb="select"]>div{
   border:1.5px solid var(--bor)!important;border-radius:8px!important;}
 [data-testid="stSelectbox"] div,[data-testid="stNumberInput"] div,
+[data-testid="stMultiSelect"] div,[data-testid="stTextInput"] div,
 [data-testid="stMultiSelect"] [data-baseweb="select"] div{
   background-color:var(--card)!important;}
+.stApp [data-testid="stWidgetLabel"],.stApp [data-testid="stWidgetLabel"] *{
+  background:transparent!important;background-color:transparent!important;}
+[data-testid="stMultiSelect"]>div>div,[data-testid="stSelectbox"]>div>div,
+[data-testid="stTextInput"]>div>div,[data-testid="stNumberInput"]>div>div{
+  border:1.5px solid var(--bor)!important;border-radius:8px!important;}
+[data-testid="stMultiSelect"] input,[data-testid="stSelectbox"] input,
+[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,
+[data-testid="stMultiSelect"] [class*="placeholder"],
+[data-testid="stSelectbox"] div[value]{color:var(--txt)!important;}
+[data-testid="stMultiSelect"] svg,[data-testid="stSelectbox"] svg{
+  fill:var(--txt)!important;color:var(--txt)!important;}
+[data-testid="stMultiSelect"] [data-tag],[data-testid="stMultiSelect"] [data-tag] *{
+  background-color:var(--a1)!important;color:var(--onacc)!important;}
+[data-testid="stMultiSelect"] input:focus-visible,
+[data-testid="stTextInput"] input:focus-visible{outline:none!important;}
+[data-testid="stMultiSelect"]>div>div:focus-within,
+[data-testid="stTextInput"]>div>div:focus-within{
+  outline:3px solid var(--a2)!important;outline-offset:2px;}
+[data-testid="stMultiSelect"] [data-baseweb="tag"],
+[data-testid="stMultiSelect"] [data-baseweb="tag"] *{
+  background-color:var(--a1)!important;color:var(--onacc)!important;}
+[data-testid="stMultiSelect"] [data-baseweb="tag"] svg{
+  fill:var(--onacc)!important;color:var(--onacc)!important;}
 [data-testid="stNumberInput"] button{background:var(--surface)!important;}
 [data-testid="stNumberInput"] button svg{fill:var(--txt)!important;}
 span[data-baseweb="tag"],span[data-baseweb="tag"] *{
